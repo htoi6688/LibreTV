@@ -179,8 +179,8 @@ export async function onRequest(context) {
             'Accept': '*/*',
             // 尝试传递一些原始请求的头信息
             'Accept-Language': request.headers.get('Accept-Language') || 'zh-CN,zh;q=0.9,en;q=0.8',
-            // 尝试设置 Referer 为目标网站的域名，或者传递原始 Referer
-            'Referer': request.headers.get('Referer') || new URL(targetUrl).origin
+            // 尝试传递原始 Referer；缺省时用站点域名（防盗链源如 bfzy 需要站点域名作 Referer 才能取到 m3u8/封面）
+            'Referer': request.headers.get('Referer') || 'https://libretv-amu.pages.dev/'
         });
 
         try {
