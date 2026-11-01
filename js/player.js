@@ -408,33 +408,11 @@ function initPlayer(videoUrl) {
         art = null;
     }
 
-    // 配置HLS.js选项
+    // 配置HLS.js选项（使用默认配置 + 自定义代理 loader；此前多个自定义调优项会导致 stream 卡在 IDLE 不加载分片）
     const hlsConfig = {
         debug: false,
         loader: adFilteringEnabled ? CustomHlsJsLoader : Hls.DefaultConfig.loader,
-        enableWorker: true,
-        lowLatencyMode: false,
-        backBufferLength: 90,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        maxBufferSize: 30 * 1000 * 1000,
-        maxBufferHole: 0.5,
-        fragLoadingMaxRetry: 6,
-        fragLoadingMaxRetryTimeout: 64000,
-        fragLoadingRetryDelay: 1000,
-        manifestLoadingMaxRetry: 3,
-        manifestLoadingRetryDelay: 1000,
-        levelLoadingMaxRetry: 4,
-        levelLoadingRetryDelay: 1000,
-        startLevel: -1,
-        abrEwmaDefaultEstimate: 500000,
-        abrBandWidthFactor: 0.95,
-        abrBandWidthUpFactor: 0.7,
-        abrMaxWithRealBitrate: true,
-        stretchShortVideoTrack: true,
-        appendErrorMaxRetry: 5,  // 增加尝试次数
-        liveSyncDurationCount: 3,
-        liveDurationInfinity: false
+        enableWorker: false
     };
 
     // Create new ArtPlayer instance
