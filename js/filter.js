@@ -2,7 +2,7 @@
 // 数据源：bfzy（苹果CMS 采集源），参数 t=类型ID / year=年份 / area=地区
 const FILTER_SOURCE = 'https://bfzyapi.com/api.php/provide/vod';
 
-let filterState = { t: '', area: '', year: '', pg: 1 };
+let filterState = { cat: '', t: '', area: '', year: '', pg: 1 };
 
 // 常用类型（type_id 来自 bfzy 分类树；已剔除理论片/福利等成人分类）
 const filterTypeOptions = [
@@ -24,7 +24,22 @@ const filterTypeOptions = [
 const filterAreaOptions = ['', '中国大陆', '香港', '台湾', '日本', '韩国', '美国', '英国', '法国', '泰国', '印度'];
 const filterYearOptions = ['', '2026', '2025', '2024', '2023', '2022', '2021', '2020', '2019', '2018'];
 
+// 顶层影视分类（bfzy 不支持 type 大分类参数，故用多 type_id 并行合并实现）
+const filterCatOptions = [
+    { id: '', name: '全部' },
+    { id: 'movie', name: '电影' },
+    { id: 'tv', name: '电视剧' },
+    { id: 'anime', name: '动漫' },
+];
+// 每个分类对应的 type_id 集合（来自 bfzy 分类树）
+const CAT_TYPES = {
+    movie: ['22', '21', '25', '24', '23', '26', '27', '28', '50'], // 喜剧/动作/爱情/科幻/恐怖/剧情/战争/纪录/动画
+    tv: ['39', '31', '32', '58'],                                    // 动漫/国产剧/欧美剧/短剧
+    anime: ['39'],
+};
+
 function initFilter() {
+    renderFilterRow('filter-cat', filterCatOptions, 'cat', o => o.id);
     renderFilterRow('filter-types', filterTypeOptions, 't', o => (typeof o === 'object' ? o.id : o));
     renderFilterRow('filter-areas', filterAreaOptions, 'area', o => o);
     renderFilterRow('filter-years', filterYearOptions, 'year', o => o);
@@ -47,7 +62,8 @@ function renderFilterRow(containerId, items, key, valueOf) {
         b.onclick = () => {
             filterState[key] = val;
             filterState.pg = 1;
-            // 重渲染三行，同步高亮
+            // 重渲染四行，同步高亮
+            renderFilterRow('filter-cat', filterCatOptions, 'cat', o => o.id);
             renderFilterRow('filter-types', filterTypeOptions, 't', o => (typeof o === 'object' ? o.id : o));
             renderFilterRow('filter-areas', filterAreaOptions, 'area', o => o);
             renderFilterRow('filter-years', filterYearOptions, 'year', o => o);
@@ -61,15 +77,44 @@ async function loadFilterResults() {
     const c = document.getElementById('filter-results');
     if (!c) return;
     c.innerHTML = '<div class="col-span-full text-center py-10 text-gray-400">正在加载...</div>';
-    const params = new URLSearchParams();
-    params.set('ac', 'videolist');
-    params.set('wd', '');
-    params.set('pg', filterState.pg);
-    if (filterState.t) params.set('t', filterState.t);
-    if (filterState.area) params.set('area', filterState.area);
-    if (filterState.year) params.set('year', filterState.year);
-    const url = FILTER_SOURCE + '?' + params.toString();
+
+    const params = () => {
+        const p = new URLSearchParams();
+        p.set('ac', 'videolist');
+        p.set('wd', '');
+        p.set('pg', filterState.pg);
+        if (filterState.area) p.set('area', filterState.area);
+        if (filterState.year) p.set('year', filterState.year);
+        return p;
+    };
+    const fetchPage = async (t) => {
+        const p = params();
+        if (t) p.set('t', t);
+        const url = FILTER_SOURCE + '?' + p.toString();
+        try {
+            const res = await fetch(PROXY_URL + encodeURIComponent(url), { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            if (!res.ok) return [];
+            const data = await res.json();
+            return data.list || [];
+        } catch (e) { return []; }
+    };
+
     try {
+        // 顶层分类（电影/电视剧/动漫）：多个 type_id 并行合并去重
+        if (filterState.cat && CAT_TYPES[filterState.cat] && !filterState.t) {
+            const lists = await Promise.all(CAT_TYPES[filterState.cat].map(t => fetchPage(t)));
+            const seen = new Set(); const merged = [];
+            lists.forEach(arr => (arr || []).forEach(it => {
+                if (it && it.vod_id && !seen.has(it.vod_id)) { seen.add(it.vod_id); merged.push(it); }
+            }));
+            renderFilterCards(merged, c);
+            return;
+        }
+
+        // 单类型/地区/年份筛选
+        const p = params();
+        if (filterState.t) p.set('t', filterState.t);
+        const url = FILTER_SOURCE + '?' + p.toString();
         const res = await fetch(PROXY_URL + encodeURIComponent(url), { headers: { 'User-Agent': 'Mozilla/5.0' } });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();

@@ -117,6 +117,11 @@ const AGGREGATED_SEARCH_CONFIG = {
     showSourceBadges: true    // 是否显示来源徽章
 };
 
+// 实测可经 /proxy/ 秒播高清的源（其 m3u8 不防盗链，可直接播放）。
+// 其余源（bfzy/lz/wujin/baidu/dyttzy/feifan/zuid/ffzy 等）m3u8 被图床防盗链拦截(HTTP 500)，
+// 播放时会自动从这些可播源中查找同片并播放，避免"点击后一直加载不播放"。
+const PLAYABLE_SOURCES = ['zy360', 'iqiyi', 'hh', 'gs', 'jisu'];
+
 // 抽象API请求配置
 const API_CONFIG = {
     search: {
