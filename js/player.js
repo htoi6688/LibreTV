@@ -454,6 +454,8 @@ function initPlayer(videoUrl) {
                 // Edge/Chrome/Safari/Opera 等浏览器原生支持 HLS（m3u8），直接原生播放实现秒播，
                 // 绕开 hls.js 对部分 TS 流的兼容性问题（同一 proxy m3u8 原生可秒播而 hls.js 会加载失败）
                 if (video.canPlayType && video.canPlayType('application/vnd.apple.mpegurl')) {
+                    // 原生 HLS 走非 CORS 模式（同源 proxy），避免 ArtPlayer 的 crossOrigin='anonymous' 导致原生 HLS 加载失败
+                    video.removeAttribute('crossorigin');
                     video.src = url;
                     return;
                 }
