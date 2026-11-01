@@ -754,9 +754,10 @@ async function search() {
                     <div class="flex h-full">
                         ${hasCover ? `
                         <div class="relative flex-shrink-0 search-card-img-container">
-                            <img src="${item.vod_pic}" alt="${safeName}" 
+                            <img src="${PROXY_URL}${encodeURIComponent(item.vod_pic)}" alt="${safeName}" 
                                  class="h-full w-full object-cover transition-transform hover:scale-110" 
-                                 onerror="this.onerror=null; this.src='https://via.placeholder.com/300x450?text=无封面'; this.classList.add('object-contain');" 
+                                 referrerpolicy="no-referrer"
+                                 onerror="this.onerror=null; this.src='image/logo.png'; this.classList.add('object-contain'); this.classList.remove('object-cover');" 
                                  loading="lazy">
                             <div class="absolute inset-0 bg-gradient-to-r from-black/30 to-transparent"></div>
                         </div>` : ''}
@@ -962,6 +963,9 @@ async function showDetails(id, vod_name, sourceCode) {
                         </button>
                         <span class="text-gray-400 text-sm">共 ${data.episodes.length} 集</span>
                     </div>
+                    <button onclick="openDownloadModal()" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition-colors">
+                        下载 MP4
+                    </button>
                     <button onclick="copyLinks()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors">
                         复制链接
                     </button>
@@ -1353,6 +1357,220 @@ function saveStringAsFile(content, fileName) {
     // 清理临时对象
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
+}
+
+// ===== 下载 MP4 功能 =====
+// 直链(mp4/mkv等)直接下载；m3u8 流通过 ffmpeg.wasm 在浏览器内转封装为 mp4 下载。
+const DL_MAX_BYTES = 400 * 1024 * 1024; // 在线转封装体积上限(约400MB)，超过请用本地工具
+
+// 打开下载面板
+function openDownloadModal() {
+    const url = currentPlayUrl();
+    if (!url) { showToast('暂无可下载的播放地址', 'error'); return; }
+    const isM3u8 = /\.m3u8(\?|$)/i.test(url);
+    const isDirect = isDirectFile(url);
+    const epNum = currentEpisodes && currentEpisodes.length > 1 ? ` 第${currentEpisodeIndex + 1}集` : '';
+
+    let m = document.getElementById('dlModal');
+    if (!m) {
+        m = document.createElement('div');
+        m.id = 'dlModal';
+        m.className = 'fixed inset-0 bg-black/85 flex items-center justify-center z-[70] hidden';
+        m.innerHTML = `
+        <div class="bg-[#151515] rounded-xl p-6 w-11/12 max-w-md border border-[#333] relative max-h-[90vh] overflow-y-auto">
+            <button id="dlClose" class="absolute top-3 right-4 text-gray-400 hover:text-white text-xl">&times;</button>
+            <h3 class="text-lg font-bold gradient-text mb-3">下载 MP4</h3>
+            <div class="text-sm text-gray-300 mb-1 break-words" id="dlTitle"></div>
+            <div class="text-xs text-gray-500 mb-4" id="dlMeta"></div>
+            <div id="dlBody"></div>
+            <div id="dlProgressWrap" class="hidden mt-3">
+                <div class="w-full bg-[#222] rounded-full h-2 mb-2"><div id="dlProgressBar" class="bg-green-500 h-2 rounded-full" style="width:0%"></div></div>
+                <div class="text-xs text-gray-400 text-center" id="dlStatus">准备中...</div>
+            </div>
+            <div class="text-[11px] text-gray-500 mt-3 leading-relaxed" id="dlTip"></div>
+        </div>`;
+        document.body.appendChild(m);
+        m.querySelector('#dlClose').addEventListener('click', closeDownloadModal);
+        m.addEventListener('click', (e) => { if (e.target === m) closeDownloadModal(); });
+    }
+    document.getElementById('dlTitle').textContent = `${currentVideoTitle || '视频'}${epNum}`;
+    document.getElementById('dlMeta').textContent = isM3u8 ? '类型：流媒体 (m3u8 / HLS)' : (isDirect ? '类型：视频直链' : '类型：未知');
+    const body = document.getElementById('dlBody');
+    const tip = document.getElementById('dlTip');
+    let html = '';
+    if (isDirect) {
+        html = `<button onclick="downloadDirectFile()" class="w-full px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm mb-2">开始下载 MP4</button>`;
+        tip.textContent = '点击后将直接在浏览器中下载该视频文件。';
+    } else if (isM3u8) {
+        html = `
+            <button onclick="downloadM3u8AsMp4()" class="w-full px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm mb-2">在线转 MP4 下载</button>
+            <div class="flex gap-2">
+                <button onclick="copyCurrentUrl()" class="flex-1 px-3 py-2 bg-[#333] hover:bg-[#444] text-white rounded-lg text-xs">复制播放地址</button>
+                <button onclick="copyFfmpegCommand()" class="flex-1 px-3 py-2 bg-[#333] hover:bg-[#444] text-white rounded-lg text-xs">复制 ffmpeg 命令</button>
+            </div>`;
+        tip.innerHTML = '在线转 MP4 适合短视频 / 单集较小文件（浏览器内存有限，上限约 400MB）。<br>完整电影 / 长片请在电脑上用本地工具下载（见本包附带的 <code>download_mp4.ps1</code> 脚本）。';
+    } else {
+        html = `<div class="text-yellow-400 text-sm mb-2">无法识别该播放地址的格式。</div>
+            <button onclick="copyCurrentUrl()" class="w-full px-3 py-2 bg-[#333] hover:bg-[#444] text-white rounded-lg text-xs">复制播放地址</button>`;
+        tip.textContent = '请复制地址后自行用支持的工具处理。';
+    }
+    body.innerHTML = html;
+    document.getElementById('dlProgressWrap').classList.add('hidden');
+    m.classList.remove('hidden');
+    m.style.display = 'flex';
+}
+
+function closeDownloadModal() {
+    const m = document.getElementById('dlModal');
+    if (m) m.style.display = 'none';
+}
+
+function isDirectFile(u) {
+    return /\.(mp4|mkv|webm|mov|flv|avi)(\?|$)/i.test(u);
+}
+
+function currentPlayUrl() {
+    if (!currentEpisodes || !currentEpisodes.length) return '';
+    return currentEpisodes[currentEpisodeIndex] || currentEpisodes[0];
+}
+
+function dlShowProgress(pct, status, show) {
+    const wrap = document.getElementById('dlProgressWrap');
+    if (!wrap) return;
+    if (show === false) { wrap.classList.add('hidden'); return; }
+    wrap.classList.remove('hidden');
+    const bar = document.getElementById('dlProgressBar');
+    const st = document.getElementById('dlStatus');
+    if (bar) bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    if (st) st.textContent = status || '';
+}
+
+function downloadDirectFile() {
+    const url = currentPlayUrl();
+    if (!url) return;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (currentVideoTitle || 'video') + '.mp4';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast('已开始下载', 'success');
+}
+
+function copyCurrentUrl() {
+    const url = currentPlayUrl();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(() => showToast('播放地址已复制', 'success')).catch(() => showToast('复制失败', 'error'));
+}
+
+function copyFfmpegCommand() {
+    const url = currentPlayUrl();
+    if (!url) return;
+    const cmd = `ffmpeg -i "${url}" -c copy "${(currentVideoTitle || 'video')}.mp4"`;
+    navigator.clipboard.writeText(cmd).then(() => showToast('ffmpeg 命令已复制', 'success')).catch(() => showToast('复制失败', 'error'));
+}
+
+function proxyUrl(u) { return PROXY_URL + encodeURIComponent(u); }
+async function proxyText(u) { const r = await fetch(proxyUrl(u)); if (!r.ok) throw new Error('请求失败 ' + r.status); return await r.text(); }
+async function proxyBytes(u) { const r = await fetch(proxyUrl(u)); if (!r.ok) throw new Error('请求失败 ' + r.status); return new Uint8Array(await r.arrayBuffer()); }
+
+function resolveRel(base, rel) { try { return new URL(rel, base).href; } catch (e) { return rel; } }
+
+// 解析 m3u8 为 ts 分片地址列表（master 时取最高分辨率线路）
+async function parseM3u8ToSegs(url, depth) {
+    depth = depth || 0;
+    if (depth > 4) throw new Error('m3u8 嵌套过深');
+    const text = await proxyText(url);
+    if (/#EXT-X-STREAM-INF|RESOLUTION=/i.test(text)) {
+        const lines = text.split('\n');
+        let bestUrl = '', bestH = -1;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line.indexOf('#EXT-X-STREAM-INF') === 0) {
+                const m = line.match(/RESOLUTION=(\d+)x(\d+)/i);
+                const h = m ? parseInt(m[2]) : 0;
+                let next = '';
+                for (let j = i + 1; j < lines.length; j++) { const t = lines[j].trim(); if (t && t[0] !== '#') { next = t; break; } }
+                if (next && h >= bestH) { bestH = h; bestUrl = resolveRel(url, next); }
+            }
+        }
+        if (bestUrl) return parseM3u8ToSegs(bestUrl, depth + 1);
+        throw new Error('主 m3u8 无可用分片');
+    }
+    const segs = [];
+    for (const line of text.split('\n')) {
+        const t = line.trim();
+        if (t && t[0] !== '#') segs.push(resolveRel(url, t));
+    }
+    if (!segs.length) throw new Error('m3u8 无分片');
+    return segs;
+}
+
+// 动态加载 ffmpeg.wasm（unpkg CDN）
+async function loadFfmpeg() {
+    if (window.__ffmpegReady) return window.__ffmpeg;
+    if (!window.FFmpeg) {
+        await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js'; s.onload = res; s.onerror = () => rej(new Error('ffmpeg 脚本加载失败')); document.head.appendChild(s); });
+    }
+    if (!window.toBlobURL) {
+        await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js'; s.onload = res; s.onerror = () => rej(new Error('ffmpeg util 加载失败')); document.head.appendChild(s); });
+    }
+    const { FFmpeg } = window.FFmpeg;
+    const ffmpeg = new FFmpeg();
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+    await ffmpeg.load({
+        coreURL: await window.toBlobURL(baseURL + '/ffmpeg-core.js', 'text/javascript'),
+        wasmURL: await window.toBlobURL(baseURL + '/ffmpeg-core.wasm', 'application/wasm'),
+    });
+    window.__ffmpeg = ffmpeg;
+    window.__ffmpegReady = true;
+    return ffmpeg;
+}
+
+// 在线将当前集 m3u8 转封装为 mp4 并下载（-c copy 无损 remux）
+async function downloadM3u8AsMp4() {
+    const url = currentPlayUrl();
+    if (!url) return;
+    try {
+        dlShowProgress(2, '正在解析播放地址...', true);
+        const segs = await parseM3u8ToSegs(url);
+        dlShowProgress(5, `共 ${segs.length} 个分片，开始下载...`);
+        let ffmpeg;
+        try { ffmpeg = await loadFfmpeg(); }
+        catch (e) { dlShowProgress(0, '', false); showToast('在线转码组件加载失败，请用复制地址 / 本地工具', 'error'); return; }
+
+        let total = 0;
+        const files = [];
+        for (let i = 0; i < segs.length; i++) {
+            const bytes = await proxyBytes(segs[i]);
+            total += bytes.length;
+            if (total > DL_MAX_BYTES) { dlShowProgress(0, '', false); showToast('文件过大(>400MB)，浏览器内存无法在线转换，请用本地工具', 'error'); return; }
+            const name = '/tmp/seg' + i + '.ts';
+            await ffmpeg.writeFile(name, bytes);
+            files.push(name);
+            dlShowProgress(5 + Math.round((i + 1) / segs.length * 70), `下载分片 ${i + 1}/${segs.length}`);
+        }
+
+        const list = files.map(f => "file '" + f + "'").join('\n');
+        await ffmpeg.writeFile('/tmp/list.txt', new TextEncoder().encode(list));
+        dlShowProgress(80, '正在合并并封装为 MP4...');
+        await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', '/tmp/list.txt', '-c', 'copy', '/tmp/output.mp4']);
+        dlShowProgress(92, '生成文件...');
+        const data = await ffmpeg.readFile('/tmp/output.mp4');
+        const blob = new Blob([data.buffer], { type: 'video/mp4' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (currentVideoTitle || 'video') + '.mp4';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+        dlShowProgress(100, '下载已开始');
+        showToast('已转封装并开始下载', 'success');
+        try { await ffmpeg.deleteFile('/tmp/output.mp4'); } catch (e) {}
+    } catch (e) {
+        console.error('下载 MP4 失败:', e);
+        dlShowProgress(0, '', false);
+        showToast('下载失败：' + (e.message || '未知错误') + '（可复制地址用本地工具）', 'error');
+    }
 }
 
 // 移除Node.js的require语句，因为这是在浏览器环境中运行的

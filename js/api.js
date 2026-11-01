@@ -353,7 +353,7 @@ async function handleAggregatedSearch(searchQuery) {
             
             // 使用Promise.race添加超时处理
             const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error(`${source}源搜索超时`)), 8000)
+                setTimeout(() => reject(new Error(`${source}源搜索超时`)), AGGREGATED_SEARCH_CONFIG.timeout)
             );
             
             const fetchPromise = fetch(PROXY_URL + encodeURIComponent(apiUrl), {
@@ -462,7 +462,7 @@ async function handleMultipleCustomSearch(searchQuery, customApiUrls) {
             
             // 使用Promise.race添加超时处理
             const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error(`自定义API ${index+1} 搜索超时`)), 8000)
+                setTimeout(() => reject(new Error(`自定义API ${index+1} 搜索超时`)), AGGREGATED_SEARCH_CONFIG.timeout)
             );
             
             const fetchPromise = fetch(PROXY_URL + encodeURIComponent(fullUrl), {

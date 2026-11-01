@@ -38,6 +38,12 @@
             </svg>
             <span class="home-btn-text">上一页</span>
         </a>
+        <button onclick="openDownloadModal()" class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors flex items-center gap-1 flex-shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+            </svg>
+            <span class="home-btn-text">下载 MP4</span>
+        </button>
     </header>
 
     <!-- 密码验证弹窗 -->
@@ -239,8 +245,8 @@
         
         // 注入服务器端环境变量 (将由服务器端替换)
         // PASSWORD 变量将在这里被服务器端注入
-        window.__ENV__.PASSWORD = "{{PASSWORD}}";
-        window.__ENV__.ADMINPASSWORD = "{{ADMINPASSWORD}}";
+        window.__ENV__.PASSWORD = "";
+        window.__ENV__.ADMINPASSWORD = "";
 
         // 修复 home 跳转
         document.addEventListener('DOMContentLoaded', function() {
