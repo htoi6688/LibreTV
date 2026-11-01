@@ -535,6 +535,14 @@ function initPlayer(videoUrl) {
                     // 增加错误计数
                     errorCount++;
 
+                    // 兜底：致命错误且多次重试仍未开始播放 → 自动从可秒播源切换同片（仅一次）
+                    if (data.fatal && !playbackStarted && errorCount >= 5 && !window.__fbTried) {
+                        window.__fbTried = true;
+                        try { hls.destroy(); currentHls = null; } catch (e) {}
+                        fallbackPlayback(currentVideoTitle);
+                        return;
+                    }
+
                     // 处理bufferAppendError
                     if (data.details === 'bufferAppendError') {
                         bufferAppendErrorCount++;
@@ -861,6 +869,35 @@ function showError(message) {
     if (errorEl) errorEl.style.display = 'flex';
     const errorMsgEl = document.getElementById('error-message');
     if (errorMsgEl) errorMsgEl.textContent = message;
+}
+
+// 播放兜底：当前 m3u8 无法播放（如被图床按 IP/防盗链拦截）时，从可秒播源查找同片并切换
+async function fallbackPlayback(videoTitle) {
+    if (!videoTitle) {
+        showError('视频加载失败，且无法自动切换播放源');
+        return;
+    }
+    const PLAYABLE = (typeof PLAYABLE_SOURCES !== 'undefined') ? PLAYABLE_SOURCES : ['zy360', 'iqiyi', 'hh', 'gs', 'jisu'];
+    const loadingEl = document.getElementById('player-loading');
+    if (loadingEl) loadingEl.style.display = 'block';
+    for (const ps of PLAYABLE) {
+        try {
+            const arr = await searchByAPIAndKeyWord(ps, videoTitle);
+            const hit = (arr || []).find(it => (it.vod_name || '') === videoTitle) || (arr || [])[0];
+            if (!hit || !hit.vod_id) continue;
+            const res = await fetch(`/api/detail?id=${encodeURIComponent(hit.vod_id)}&source=${ps}&_t=${Date.now()}`);
+            const data = await res.json();
+            const eps = data.episodes || [];
+            if (!eps.length) continue;
+            const epUrl = eps[0].url;
+            if (!epUrl) continue;
+            showToast(`当前源无法播放，已自动切换到「${ps}」源秒播`, 'info');
+            try { if (currentHls) { currentHls.destroy(); currentHls = null; } } catch (e) {}
+            initPlayer(epUrl);
+            return;
+        } catch (e) {}
+    }
+    showError('视频加载失败，且未找到可播放的替代源');
 }
 
 // 更新集数信息
