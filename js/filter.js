@@ -129,7 +129,7 @@ function renderFilterCards(list, c) {
     c.innerHTML = '';
     list.forEach(item => {
         const safeName = (item.vod_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const pic = item.vod_pic ? PROXY_URL + encodeURIComponent(item.vod_pic) : 'image/logo.png';
+        const pic = item.vod_pic ? item.vod_pic : 'image/logo.png';
         const meta = [item.vod_year, item.vod_area].filter(Boolean).join(' · ');
         const remarks = item.vod_remarks ? String(item.vod_remarks).replace(/</g, '&lt;') : '';
         const card = document.createElement('div');

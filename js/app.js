@@ -754,7 +754,7 @@ async function search() {
                     <div class="flex h-full">
                         ${hasCover ? `
                         <div class="relative flex-shrink-0 search-card-img-container">
-                            <img src="${PROXY_URL}${encodeURIComponent(item.vod_pic)}" alt="${safeName}" 
+                            <img src="${item.vod_pic}" alt="${safeName}" 
                                  class="h-full w-full object-cover transition-transform hover:scale-110" 
                                  referrerpolicy="no-referrer"
                                  onerror="this.onerror=null; this.src='image/logo.png'; this.classList.add('object-contain'); this.classList.remove('object-cover');" 
