@@ -118,9 +118,10 @@ const AGGREGATED_SEARCH_CONFIG = {
 };
 
 // 实测可经 /proxy/ 秒播高清的源（其 m3u8 不防盗链，可直接播放）。
-// 其余源（bfzy/lz/wujin/baidu/dyttzy/feifan/zuid/ffzy 等）m3u8 被图床防盗链拦截(HTTP 500)，
-// 播放时会自动从这些可播源中查找同片并播放，避免"点击后一直加载不播放"。
-const PLAYABLE_SOURCES = ['iqiyi', 'zy360', 'hh', 'gs', 'jisu'];
+// 可播源：按实测分片是否真正可解码排序。
+// bfzy 的 m3u8 与 TS 分片经线上代理均返回 200 且分片为真实 TS（0x47），可秒播，置首；
+// iqiyi/zy360/hh/gs/jisu 分片多为图片伪装或异常，仅作兜底。
+const PLAYABLE_SOURCES = ['bfzy', 'iqiyi', 'zy360', 'hh', 'gs', 'jisu'];
 
 // 抽象API请求配置
 const API_CONFIG = {

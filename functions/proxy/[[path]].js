@@ -195,11 +195,22 @@ export async function onRequest(context) {
                  throw new Error(`HTTP error ${response.status}: ${response.statusText}. URL: ${targetUrl}. Body: ${errorBody.substring(0, 150)}`);
             }
 
-            // 读取响应内容为文本
-            const content = await response.text();
             const contentType = response.headers.get('Content-Type') || '';
+            const ctLower = contentType.toLowerCase();
+            // 判断是否为媒体二进制（图片/视频/音频/TS分片等）：
+            // 二进制必须用 arrayBuffer 读取，用 response.text() 会把无效 UTF-8 字节替换为 U+FFFD，
+            // 从而破坏 TS 分片与图片，导致视频无法播放、封面无法显示。
+            const isMediaBinary = ctLower.startsWith('video/') || ctLower.startsWith('audio/') || ctLower.startsWith('image/') || /\.(mp4|webm|mkv|avi|mov|ts|mts|m2ts|mp3|aac|flac|jpg|jpeg|png|gif|webp|avif)(\?|#|$)/i.test(targetUrl);
+            if (isMediaBinary) {
+                const buf = await response.arrayBuffer();
+                logDebug(`请求成功(二进制): ${targetUrl}, Content-Type: ${contentType}, 长度: ${buf.byteLength}`);
+                return { content: buf, contentType, responseHeaders: response.headers, binary: true };
+            }
+
+            // 文本内容（M3U8 / JSON / HTML 等）
+            const content = await response.text();
             logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${content.length}`);
-            return { content, contentType, responseHeaders: response.headers }; // 同时返回原始响应头
+            return { content, contentType, responseHeaders: response.headers, binary: false };
 
         } catch (error) {
              logDebug(`请求彻底失败: ${targetUrl}: ${error.message}`);
@@ -465,10 +476,10 @@ export async function onRequest(context) {
         }
 
         // --- 实际请求 ---
-        const { content, contentType, responseHeaders } = await fetchContentWithType(targetUrl);
+        const { content, contentType, responseHeaders, binary } = await fetchContentWithType(targetUrl);
 
-        // --- 写入缓存 (KV) ---
-        if (kvNamespace) {
+        // --- 写入缓存 (KV) --- 二进制内容（图片/分片）不缓存（无法 JSON 序列化且体积大）
+        if (kvNamespace && !binary) {
              try {
                  const headersToCache = {};
                  responseHeaders.forEach((value, key) => { headersToCache[key.toLowerCase()] = value; });
@@ -483,7 +494,16 @@ export async function onRequest(context) {
         }
 
         // --- 处理响应 ---
-        if (isM3u8Content(content, contentType)) {
+        if (binary) {
+            // 二进制内容（图片 / 视频 / 音频 / TS 分片）：直接用 ArrayBuffer 返回，不做文本转码
+            logDebug(`内容是二进制媒体 (类型: ${contentType})，直接透传: ${targetUrl}`);
+            const finalHeaders = new Headers(responseHeaders);
+            finalHeaders.set('Cache-Control', `public, max-age=${CACHE_TTL}`);
+            finalHeaders.set("Access-Control-Allow-Origin", "*");
+            finalHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS");
+            finalHeaders.set("Access-Control-Allow-Headers", "*");
+            return new Response(content, { status: 200, headers: finalHeaders });
+        } else if (isM3u8Content(content, contentType)) {
             logDebug(`内容是 M3U8，开始处理: ${targetUrl}`);
             const processedM3u8 = await processM3u8Content(targetUrl, content, 0, env);
             return createM3u8Response(processedM3u8);
