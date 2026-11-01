@@ -764,22 +764,68 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         super(config);
         const load = this.load.bind(this);
         this.load = function (context, config, callbacks) {
-            // 拦截manifest和level请求
-            if (context.type === 'manifest' || context.type === 'level') {
-                const onSuccess = callbacks.onSuccess;
-                callbacks.onSuccess = function (response, stats, context) {
-                    // 如果是m3u8文件，处理内容以移除广告分段
-                    if (response.data && typeof response.data === 'string') {
-                        // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-                        response.data = filterAdsFromM3U8(response.data, true);
-                    }
-                    return onSuccess(response, stats, context);
-                };
+            const type = context.type;
+            const isM3u8 = (type === 'manifest' || type === 'level');
+            // 分片、密钥、init段等资源同样需要走代理
+            const isFrag = (type === 'frag' || type === 'key' || type === 'initSegment' ||
+                           type === 'audioTrack' || type === 'subtitleTrack' || type === 'caption' ||
+                           type === 'audio' || type === 'subtitle');
+            // m3u8 与分片都走代理，避免直连采集源域名被跨域(CORS)/防盗链拦截导致黑屏打不开
+            if (isM3u8 || isFrag) {
+                const origUrl = context.url;
+                let isProxied = false;
+                try { const u = new URL(String(origUrl), window.location.origin); isProxied = u.pathname.indexOf('/proxy/') === 0; } catch (e) {}
+                if (origUrl && !isProxied) {
+                    context.url = PROXY_URL + encodeURIComponent(origUrl);
+                }
+                if (isM3u8) {
+                    const onSuccess = callbacks.onSuccess;
+                    callbacks.onSuccess = function (response, stats, ctx) {
+                        if (response.data && typeof response.data === 'string') {
+                            // 过滤掉广告段 - 实现更精确的广告过滤逻辑
+                            response.data = filterAdsFromM3U8(response.data, true);
+                            // 将 m3u8 内的分片/密钥地址重写为走代理的绝对地址
+                            response.data = proxyRewriteM3u8(response.data, origUrl);
+                        }
+                        return onSuccess(response, stats, ctx);
+                    };
+                }
             }
             // 执行原始load方法
             load(context, config, callbacks);
         };
     }
+}
+
+// 将 m3u8 文本内的分片/密钥地址重写为走代理的绝对地址，避免相对分片因代理基址错乱
+function proxyRewriteM3u8(m3u8Content, baseUrl) {
+    if (!m3u8Content) return m3u8Content;
+    const lines = m3u8Content.split('\n');
+    const rewritten = lines.map(line => {
+        if (!line || !line.trim()) return line;
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('#')) {
+            // 普通分片行（.ts / .m4s / .aac / .m3u8 等）：绝对化原始地址，交由 loader 统一走代理
+            try {
+                const abs = new URL(trimmed, baseUrl).toString();
+                return abs;
+            } catch (e) {
+                return line;
+            }
+        }
+        // #EXT-X-KEY 与 #EXT-X-MEDIA 中的 URI
+        const uriMatch = line.match(/URI="([^"]+)"/);
+        if (uriMatch && (trimmed.indexOf('#EXT-X-KEY') === 0 || trimmed.indexOf('#EXT-X-MEDIA') === 0)) {
+            try {
+                const abs = new URL(uriMatch[1], baseUrl).toString();
+                return line.replace(uriMatch[1], abs);
+            } catch (e) {
+                return line;
+            }
+        }
+        return line;
+    });
+    return rewritten.join('\n');
 }
 
 // 过滤可疑的广告内容
