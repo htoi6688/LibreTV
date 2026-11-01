@@ -100,6 +100,9 @@ function renderFilterCards(list, c) {
             <div class="text-sm text-white truncate" title="${safeName}">${safeName}</div>
           </div>`;
         card.addEventListener('click', () => {
+            // 点击筛选结果卡片直接进入详情（含选集与播放），而非重新搜索
+            const sc = item.source_code || 'bfzy';
+            if (item.vod_id && typeof showDetails === 'function') { showDetails(item.vod_id, safeName, sc); return; }
             if (typeof fillAndSearch === 'function') { fillAndSearch(safeName); return; }
             const si = document.getElementById('searchInput');
             if (si) { si.value = safeName; if (typeof search === 'function') search(); }
