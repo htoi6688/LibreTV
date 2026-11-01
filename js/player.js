@@ -1716,6 +1716,24 @@ function openDownloadModal() {
         tip.textContent = '请复制地址后自行用支持的工具处理。';
     }
     body.innerHTML = html;
+    // 选集批量下载区（多集时显示）
+    if (currentEpisodes && currentEpisodes.length > 1) {
+        const batchHtml = `
+            <div class="mt-4 border-t border-[#333] pt-3">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-medium text-gray-300">选集批量下载（共 ${currentEpisodes.length} 集）</span>
+                    <div class="flex gap-1.5">
+                        <button onclick="selectAllDlEpisodes(true)" class="px-2 py-1 bg-[#333] hover:bg-[#444] text-white rounded text-xs">全选</button>
+                        <button onclick="selectAllDlEpisodes(false)" class="px-2 py-1 bg-[#333] hover:bg-[#444] text-white rounded text-xs">全不选</button>
+                    </div>
+                </div>
+                <div id="dlEpisodeList" class="max-h-40 overflow-y-auto grid grid-cols-4 gap-1.5 mb-2"></div>
+                <button onclick="downloadSelectedEpisodes()" class="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">批量下载已选 <span id="dlSelCount">0</span> 集</button>
+                <div class="text-[11px] text-gray-500 mt-1 leading-relaxed">勾选集数后批量下载：直链多集同时触发可能被浏览器拦截，建议分批次；m3u8 集将自动在线转封装。绿色高亮为当前集。</div>
+            </div>`;
+        body.insertAdjacentHTML('beforeend', batchHtml);
+        renderDlEpisodeList();
+    }
     document.getElementById('dlProgressWrap').classList.add('hidden');
     m.classList.remove('hidden');
     m.style.display = 'flex';
@@ -1742,15 +1760,82 @@ function dlShowProgress(pct, status, show) {
 }
 
 function downloadDirectFile() {
-    const url = currentVideoUrl || '';
+    const multi = currentEpisodes && currentEpisodes.length > 1;
+    downloadDirectFileUrl(currentVideoUrl, currentVideoTitle, currentEpisodeIndex, multi);
+}
+
+// 参数化直链下载：可指定任意集
+function downloadDirectFileUrl(url, title, epIndex, multi) {
     if (!url) return;
     const a = document.createElement('a');
     a.href = url;
-    a.download = (currentVideoTitle || 'video') + '.mp4';
+    a.download = (title || 'video') + (multi ? `_EP${(epIndex || 0) + 1}` : '') + '.mp4';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    showToast('已开始下载', 'success');
+    showToast('已开始下载：' + (title || '视频'), 'success');
+}
+
+// ===== 选集批量下载 =====
+function renderDlEpisodeList() {
+    const listEl = document.getElementById('dlEpisodeList');
+    if (!listEl) return;
+    if (!currentEpisodes || currentEpisodes.length <= 1) { listEl.innerHTML = ''; return; }
+    const displayEpisodes = episodesReversed ? [...currentEpisodes].reverse() : currentEpisodes;
+    let html = '';
+    displayEpisodes.forEach((ep, i) => {
+        const realIndex = episodesReversed ? currentEpisodes.length - 1 - i : i;
+        const isActive = realIndex === currentEpisodeIndex;
+        html += `<label class="relative flex items-center justify-center px-1 py-1.5 rounded text-xs cursor-pointer select-none ${isActive ? 'bg-green-700 text-white border border-green-500' : 'bg-[#222] hover:bg-[#333] text-gray-300 border border-[#333]'}">
+            <input type="checkbox" data-ep-index="${realIndex}" class="absolute opacity-0 inset-0 cursor-pointer" ${isActive ? 'checked' : ''}>
+            第${realIndex + 1}集</label>`;
+    });
+    listEl.innerHTML = html;
+    // 勾选变化更新计数
+    listEl.querySelectorAll('input[data-ep-index]').forEach(cb => cb.addEventListener('change', updateDlSelCount));
+    updateDlSelCount();
+}
+
+function updateDlSelCount() {
+    const c = document.querySelectorAll('#dlEpisodeList input[data-ep-index]:checked').length;
+    const el = document.getElementById('dlSelCount');
+    if (el) el.textContent = c;
+}
+
+function selectAllDlEpisodes(on) {
+    document.querySelectorAll('#dlEpisodeList input[data-ep-index]').forEach(cb => cb.checked = on);
+    updateDlSelCount();
+}
+
+async function downloadSelectedEpisodes() {
+    const boxes = [...document.querySelectorAll('#dlEpisodeList input[data-ep-index]:checked')];
+    const idxs = boxes.map(b => parseInt(b.dataset.epIndex, 10))
+        .filter(i => !isNaN(i) && i >= 0 && i < currentEpisodes.length);
+    if (!idxs.length) { showToast('请先勾选要下载的集数', 'error'); return; }
+    const total = idxs.length;
+    dlShowProgress(1, `开始批量下载 ${total} 集...`, true);
+    let done = 0;
+    for (const idx of idxs) {
+        const epUrl = currentEpisodes[idx] || '';
+        if (!epUrl) { done++; continue; }
+        dlShowProgress(2 + Math.round(done / total * 8), `正在处理 第${idx + 1}集（${done + 1}/${total}）...`);
+        try {
+            if (isDirectFile(epUrl)) {
+                // 直链：触发浏览器下载（多文件连续触发可能被浏览器拦截）
+                downloadDirectFileUrl(epUrl, currentVideoTitle, idx, true);
+            } else if (/\.m3u8(\?|$)/i.test(epUrl)) {
+                await downloadM3u8AsMp4Url(epUrl, currentVideoTitle, idx, true);
+            } else {
+                showToast(`第${idx + 1}集格式无法自动下载，请用复制地址`, 'error');
+            }
+        } catch (e) {
+            console.error('批量下载失败 第' + (idx + 1) + '集', e);
+            showToast(`第${idx + 1}集下载失败：${(e.message || '')}`, 'error');
+        }
+        done++;
+    }
+    dlShowProgress(100, `批量下载完成（${done}/${total} 集已处理）`);
+    showToast(`批量下载完成：${done}/${total} 集已处理`, 'success');
 }
 
 function copyCurrentUrl() {
@@ -1825,8 +1910,14 @@ async function loadFfmpeg() {
 
 // 在线将当前集 m3u8 转封装为 mp4 并下载（-c copy 无损 remux）
 async function downloadM3u8AsMp4() {
-    const url = currentVideoUrl || '';
+    const multi = currentEpisodes && currentEpisodes.length > 1;
+    await downloadM3u8AsMp4Url(currentVideoUrl, currentVideoTitle, currentEpisodeIndex, multi);
+}
+
+// 参数化 m3u8 转封装：可指定任意集
+async function downloadM3u8AsMp4Url(url, title, epIndex, multi) {
     if (!url) return;
+    const baseName = (title || 'video') + (multi ? `_EP${(epIndex || 0) + 1}` : '');
     try {
         dlShowProgress(2, '正在解析播放地址...', true);
         const segs = await parseM3u8ToSegs(url);
@@ -1856,11 +1947,11 @@ async function downloadM3u8AsMp4() {
         const blob = new Blob([data.buffer], { type: 'video/mp4' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = (currentVideoTitle || 'video') + '.mp4';
+        a.download = baseName + '.mp4';
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(a.href);
         dlShowProgress(100, '下载已开始');
-        showToast('已转封装并开始下载', 'success');
+        showToast('已转封装并开始下载：' + baseName, 'success');
         try { await ffmpeg.deleteFile('/tmp/output.mp4'); } catch (e) {}
     } catch (e) {
         console.error('下载 MP4 失败:', e);

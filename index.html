@@ -238,6 +238,31 @@
                 </div>
             </div>
             
+            <!-- 影视筛选板块：按类型/地区/年份筛选（采集源驱动） -->
+            <div id="filterArea" class="w-full my-8">
+                <div class="mx-auto max-w-screen-xl px-2">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-xl font-bold text-white">影视筛选</h2>
+                        <span class="text-xs text-gray-500">按 类型 / 地区 / 年份 浏览全网资源</span>
+                    </div>
+                    <div class="space-y-2 mb-4">
+                        <div class="flex items-start">
+                            <span class="text-gray-400 text-sm w-12 shrink-0 mt-1.5">类型</span>
+                            <div id="filter-types" class="flex flex-wrap gap-2"></div>
+                        </div>
+                        <div class="flex items-start">
+                            <span class="text-gray-400 text-sm w-12 shrink-0 mt-1.5">地区</span>
+                            <div id="filter-areas" class="flex flex-wrap gap-2"></div>
+                        </div>
+                        <div class="flex items-start">
+                            <span class="text-gray-400 text-sm w-12 shrink-0 mt-1.5">年份</span>
+                            <div id="filter-years" class="flex flex-wrap gap-2"></div>
+                        </div>
+                    </div>
+                    <div id="filter-results" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3"></div>
+                </div>
+            </div>
+
             <!-- 豆瓣热门推荐区域: 默认隐藏，现在位于搜索区域下方，调整宽度 -->
             <div id="doubanArea" class="w-full my-8 hidden">
                 <div class="mx-auto max-w-screen-xl px-2">
@@ -417,6 +442,7 @@
     <script src="js/ui.js"></script>
     <script src="js/api.js"></script>
     <script src="js/douban.js"></script>
+    <script src="js/filter.js"></script>
     <script src="js/password.js"></script>
     <script src="js/search.js"></script>
     <script src="js/app.js"></script>
