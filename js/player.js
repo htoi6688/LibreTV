@@ -451,6 +451,12 @@ function initPlayer(videoUrl) {
         },
         customType: {
             m3u8: function (video, url) {
+                // Edge/Chrome/Safari/Opera 等浏览器原生支持 HLS（m3u8），直接原生播放实现秒播，
+                // 绕开 hls.js 对部分 TS 流的兼容性问题（同一 proxy m3u8 原生可秒播而 hls.js 会加载失败）
+                if (video.canPlayType && video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = url;
+                    return;
+                }
                 // 清理之前的HLS实例
                 if (currentHls && currentHls.destroy) {
                     try {
@@ -855,7 +861,7 @@ async function fallbackPlayback(videoTitle) {
         showError('视频加载失败，且无法自动切换播放源');
         return;
     }
-    const PLAYABLE = (typeof PLAYABLE_SOURCES !== 'undefined') ? PLAYABLE_SOURCES : ['zy360', 'iqiyi', 'hh', 'gs', 'jisu'];
+    const PLAYABLE = (typeof PLAYABLE_SOURCES !== 'undefined') ? PLAYABLE_SOURCES : ['bfzy', 'zy360', 'iqiyi', 'hh', 'gs', 'jisu'];
     const loadingEl = document.getElementById('player-loading');
     if (loadingEl) loadingEl.style.display = 'block';
     for (const ps of PLAYABLE) {
